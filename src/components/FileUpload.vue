@@ -75,7 +75,8 @@ export default {
     }
   },
   methods: {
-    ...mapActions(['uploadFile']),
+    ...mapActions(['uploadFile']),  // ✅ 使用 Vuex 中的 uploadFile action
+
     handleFileChange(event) {
       const file = event.target.files[0]
       if (file) {
@@ -112,21 +113,26 @@ export default {
       const i = Math.floor(Math.log(bytes) / Math.log(k))
       return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
     },
+
+    // ✅ 这里改成调用 Vuex → FastAPI
     async handleSubmit() {
-      if (!this.selectedFile) return
-      
-      const formData = new FormData()
-      formData.append('file', this.selectedFile)
-      
-      await this.uploadFile(formData)
-      
-      if (this.uploadStatus === 'success') {
-        this.$router.push('/results')
-      }
+  if (!this.selectedFile) return
+
+  try {
+    await this.uploadFile(this.selectedFile)  // ✅ 直接传 file
+
+    if (this.uploadStatus === 'success') {
+      this.$router.push('/results')
     }
+  } catch (err) {
+    console.error('上传失败:', err)
+  }
+}
+
   }
 }
 </script>
+
 
 <style scoped>
 .file-upload {

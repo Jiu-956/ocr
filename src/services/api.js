@@ -1,16 +1,18 @@
+// src/services/api.js
 import axios from 'axios'
 
-const api = axios.create({
-  baseURL: 'http://localhost:5000/api', // 假设后端运行在5000端口
-  timeout: 10000
+const apiClient = axios.create({
+  baseURL: '/api',
+  headers: {
+    'Content-Type': 'multipart/form-data',
+  },
 })
 
-export default {
-  uploadFile(formData) {
-    return api.post('/ocr', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    })
-  }
+// ✅ 命名导出 uploadFile
+export function uploadFile(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return apiClient.post('/predict/', formData)
 }
+
+export default { uploadFile }  // 默认导出一个对象，包含 uploadFile

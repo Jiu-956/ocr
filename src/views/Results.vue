@@ -3,16 +3,16 @@
     <h2>OCR Results</h2>
     
     <div v-if="ocrResults" class="results-container">
-      <div class="result-section">
+      <div class="result-section" v-if="ocrResults.text">
         <h3>Extracted Text:</h3>
         <pre class="extracted-text">{{ ocrResults.text }}</pre>
       </div>
       
-      <div v-if="ocrResults.pages" class="result-section">
+      <div v-if="ocrResults.pages && ocrResults.pages.length" class="result-section">
         <h3>Page Details:</h3>
         <div v-for="(page, index) in ocrResults.pages" :key="index" class="page-details">
           <h4>Page {{ index + 1 }}</h4>
-          <p>Confidence: {{ page.confidence.toFixed(2) }}%</p>
+          <p v-if="page.confidence">Confidence: {{ page.confidence.toFixed(2) }}%</p>
           <pre v-if="page.text">{{ page.text }}</pre>
         </div>
       </div>

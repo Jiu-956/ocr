@@ -1,5 +1,5 @@
 import { createStore } from 'vuex'
-import api from './services/api'   // ✅ 现在 api.uploadFile 可用了
+import api from './services/api'
 
 export default createStore({
   state: {
@@ -24,12 +24,12 @@ export default createStore({
     }
   },
   actions: {
-    async uploadFile({ commit }, file) {   // ✅ 注意参数名，这里直接接收 File 对象
+    async uploadFile({ commit }, file) {
       commit('resetState')
       commit('setUploadStatus', 'uploading')
 
       try {
-        const response = await api.uploadFile(file)  // ✅ 直接传 file 即可
+        const response = await api.uploadFile(file)
 
         let result
         if (typeof response.data === 'object') {
@@ -38,13 +38,20 @@ export default createStore({
           try {
             result = JSON.parse(response.data)
           } catch {
-            result = response.data
+            result = { text: response.data }
           }
         } else {
-          result = String(response.data)
+          result = { text: String(response.data) }
         }
 
-        commit('setOcrResults', result)
+        console.log("后端返回的数据:", result)  // ✅ 调试用，方便确认返回字段
+
+        commit('setOcrResults', {
+          text: result.text || result.content || '',   // 👈 兼容 text / content
+          pages: result.pages || [],
+          image: result.image || result.image_bytes || ''
+        })
+
         commit('setUploadStatus', 'success')
       } catch (error) {
         console.error('Upload failed:', error)

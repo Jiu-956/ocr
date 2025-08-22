@@ -1,105 +1,124 @@
 <template>
   <div class="results">
     <h2>OCR Results</h2>
-    
-    <div v-if="ocrResults" class="results-container">
-      <div class="result-section" v-if="ocrResults.text">
-        <h3>Extracted Text:</h3>
-        <pre class="extracted-text">{{ ocrResults.text }}</pre>
-      </div>
-      
-      <div v-if="ocrResults.pages && ocrResults.pages.length" class="result-section">
-        <h3>Page Details:</h3>
-        <div v-for="(page, index) in ocrResults.pages" :key="index" class="page-details">
-          <h4>Page {{ index + 1 }}</h4>
-          <p v-if="page.confidence">Confidence: {{ page.confidence.toFixed(2) }}%</p>
-          <pre v-if="page.text">{{ page.text }}</pre>
-        </div>
-      </div>
-      
-      <div v-if="ocrResults.image" class="result-section">
-        <h3>Processed Image:</h3>
-        <img :src="`data:image/jpeg;base64,${ocrResults.image}`" alt="Processed document" class="processed-image">
+
+    <div class="results-container">
+      <!-- 左边 PDF 渲染 -->
+      <div ref="pdfContainer" class="pdf-viewer"></div>
+
+      <!-- 右边 Nougat LaTeX 输出 -->
+      <div class="latex-viewer">
+        <h3>Nougat LaTeX 输出：</h3>
+        <pre>
+          <div
+            v-for="(line, index) in latexLines"
+            :key="index"
+            class="latex-line"
+            @mouseover="scrollPdfTo(index)"
+          >
+            {{ line }}
+          </div>
+        </pre>
       </div>
     </div>
-    
-    <div v-else class="no-results">
-      <p>No results to display.</p>
-    </div>
-    
-    <button @click="goBack" class="back-button">Process Another File</button>
   </div>
 </template>
 
 <script>
-import { mapState } from 'vuex'
+import { ref, computed, onMounted } from "vue";
+import { useStore } from "vuex";
+import * as pdfjsLib from "pdfjs-dist";
 
 export default {
-  name: 'OcrResults',
-  computed: {
-    ...mapState(['ocrResults'])
+  name: "OcrResults",
+  setup() {
+    const store = useStore();
+    const pdfContainer = ref(null);
+    const pdfDoc = ref(null);
+
+    // 计算属性：LaTeX 按行拆分
+    const latexLines = computed(() => {
+      return store.state.ocrResults?.text
+        ? store.state.ocrResults.text.split("\n")
+        : [];
+    });
+
+    // 加载 PDF
+    onMounted(async () => {
+      if (store.state.ocrResults?.pdfUrl) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+        const loadingTask = pdfjsLib.getDocument(store.state.ocrResults.pdfUrl);
+        pdfDoc.value = await loadingTask.promise;
+        renderPage(1); // 默认先渲染第 1 页
+      }
+    });
+
+    const renderPage = async (num) => {
+      if (!pdfDoc.value) return;
+      const page = await pdfDoc.value.getPage(num);
+      const viewport = page.getViewport({ scale: 1.5 });
+
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d");
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+
+      const renderContext = { canvasContext: context, viewport };
+      await page.render(renderContext).promise;
+
+      pdfContainer.value.innerHTML = ""; // 清空旧的
+      pdfContainer.value.appendChild(canvas);
+    };
+
+    // 鼠标悬停时滚动 PDF 对应位置
+    const scrollPdfTo = (lineIndex) => {
+      if (pdfContainer.value && store.state.ocrResults?.text) {
+        const totalLines = store.state.ocrResults.text.split("\n").length;
+        const percent = lineIndex / totalLines;
+        pdfContainer.value.scrollTop =
+          pdfContainer.value.scrollHeight * percent;
+      }
+    };
+
+    return {
+      pdfContainer,
+      latexLines,
+      scrollPdfTo,
+    };
   },
-  methods: {
-    goBack() {
-      this.$store.commit('resetState')
-      this.$router.push('/')
-    }
-  }
-}
+};
 </script>
 
 <style scoped>
 .results-container {
-  text-align: left;
-  margin: 2rem 0;
+  display: flex;
+  gap: 20px;
 }
 
-.result-section {
-  margin-bottom: 2rem;
-  padding: 1rem;
-  border: 1px solid #eee;
-  border-radius: 4px;
-}
-
-.extracted-text {
-  white-space: pre-wrap;
-  background-color: #f5f5f5;
-  padding: 1rem;
-  border-radius: 4px;
-  max-height: 300px;
+.pdf-viewer {
+  flex: 1;
+  height: 80vh;
   overflow-y: auto;
-}
-
-.page-details {
-  margin-bottom: 1rem;
-  padding: 1rem;
-  background-color: #f9f9f9;
-  border-radius: 4px;
-}
-
-.processed-image {
-  max-width: 100%;
   border: 1px solid #ddd;
-  border-radius: 4px;
+  background: #f9f9f9;
 }
 
-.no-results {
-  margin: 2rem 0;
-  color: #666;
+.latex-viewer {
+  flex: 1;
+  height: 80vh;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  padding: 10px;
+  font-family: monospace;
+  background: #fff;
 }
 
-.back-button {
-  margin-top: 2rem;
-  background-color: #42b983;
-  color: white;
-  border: none;
-  padding: 0.75rem 1.5rem;
-  border-radius: 4px;
+.latex-line {
+  padding: 2px 5px;
   cursor: pointer;
-  font-size: 1rem;
 }
 
-.back-button:hover {
-  background-color: #3aa876;
+.latex-line:hover {
+  background: #e0f7fa;
 }
 </style>

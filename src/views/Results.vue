@@ -4,19 +4,42 @@
 
     <div class="results-container">
       <!-- 左边 PDF 渲染 -->
-      <div ref="pdfContainer" class="pdf-viewer"></div>
+      <div class="pdf-viewer">
+        <iframe
+          v-if="pdfUrl"
+          :src="`${pdfUrl}#page=${currentPage}`"
+          class="pdf-iframe"
+          frameborder="0"
+          @load="onPdfLoad"
+        ></iframe>
+        <div v-else class="pdf-placeholder">
+          <p>请上传PDF文件</p>
+        </div>
+      </div>
 
       <!-- 右边 Nougat LaTeX 输出 -->
       <div class="latex-viewer">
-        <h3>Nougat LaTeX 输出：</h3>
+        <div class="latex-header">
+          <h3>Nougat LaTeX 输出</h3>
+          <div class="page-controls" v-if="totalPages > 0">
+            <span>第 {{ currentPage }} 页 / 共 {{ totalPages }} 页</span>
+          </div>
+        </div>
         <div class="latex-lines">
           <div
             v-for="(line, index) in latexLines"
             :key="index"
             class="latex-line"
-            @mouseover="scrollPdfTo(index)"
+            :class="{ 'highlighted': hoveredLine === index }"
+            @mouseenter="handleLineHover(index)"
+            @mouseleave="handleLineLeave"
           >
-            {{ line }}
+            <span class="line-number">{{ index + 1 }}</span>
+            <span class="line-content">{{ line }}</span>
+          </div>
+
+          <div v-if="latexLines.length === 0" class="latex-empty">
+            ⚠️ 没有可显示的 LaTeX 内容
           </div>
         </div>
       </div>
@@ -27,116 +50,200 @@
 <script>
 import { ref, computed, onMounted } from "vue";
 import { useStore } from "vuex";
-import * as pdfjsLib from "pdfjs-dist";
-
-// 使用兼容的方式设置 worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url
-).toString();
 
 export default {
   name: "OcrResults",
   setup() {
     const store = useStore();
-    const pdfContainer = ref(null);
-    const pdfDoc = ref(null);
+
+    // pdfUrl 兜底为空字符串，避免 undefined
+    const pdfUrl = computed(() => store.state.ocrResults?.pdfUrl || "");
+
+    // 把任何可能的返回（字符串/对象/空）都兜底成字符串
+    const latexText = computed(() => {
+      const raw = store.state.ocrResults?.text;
+      if (typeof raw === "string") return raw;
+      if (raw == null) return "";
+      try {
+        // 有些后端会给对象，这里兜底为 JSON 字符串，至少可见
+        return JSON.stringify(raw, null, 2);
+      } catch {
+        return String(raw);
+      }
+    });
+
+    const currentPage = ref(1);
+    const totalPages = ref(0);
+    const hoveredLine = ref(null);
 
     // LaTeX 按行拆分
     const latexLines = computed(() => {
-      return store.state.ocrResults?.text
-        ? store.state.ocrResults.text.split("\n")
-        : [];
+      if (!latexText.value) return [];
+      // 兼容没有换行的整段文本
+      const lines = latexText.value.includes("\n")
+        ? latexText.value.split("\n")
+        : [latexText.value];
+      return lines.filter(line => line.trim() !== "");
     });
 
-    // 渲染 PDF 页
-    const renderPage = async (num) => {
-      if (!pdfDoc.value) return;
-      const page = await pdfDoc.value.getPage(num);
-      const viewport = page.getViewport({ scale: 1.2 }); // ✅ 缩小一点，避免太大
-
-      const canvas = document.createElement("canvas");
-      const context = canvas.getContext("2d");
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-
-      await page.render({ canvasContext: context, viewport }).promise;
-
-      pdfContainer.value.innerHTML = "";
-      pdfContainer.value.appendChild(canvas);
+    // 鼠标悬停处理
+    const handleLineHover = (lineIndex) => {
+      hoveredLine.value = lineIndex;
+      scrollToCorrespondingPage(lineIndex);
     };
 
-    // 鼠标悬停滚动 PDF
-    const scrollPdfTo = (lineIndex) => {
-      if (pdfContainer.value && store.state.ocrResults?.text) {
-        const totalLines = store.state.ocrResults.text.split("\n").length;
-        const percent = lineIndex / totalLines;
-        pdfContainer.value.scrollTop =
-          pdfContainer.value.scrollHeight * percent;
+    const handleLineLeave = () => {
+      hoveredLine.value = null;
+    };
+
+    // 滚动到对应页面
+    const scrollToCorrespondingPage = (lineIndex) => {
+      // 简单的页面映射逻辑：每10行对应一页
+      const targetPage = Math.floor(lineIndex / 10) + 1;
+      if (targetPage >= 1 && (totalPages.value === 0 || targetPage <= totalPages.value)) {
+        currentPage.value = targetPage;
       }
     };
 
-    // 加载 PDF
-    onMounted(async () => {
-      const pdfUrl = store.state.ocrResults?.pdfUrl;
-      if (!pdfUrl) return console.error("pdfUrl 无效");
+    // PDF加载完成回调
+    const onPdfLoad = () => {
+      // 注意：iframe 方式拿不到总页数，这里给一个可见默认值
+      totalPages.value = Math.max(totalPages.value, 5);
+    };
 
-      try {
-        const loadingTask = pdfjsLib.getDocument(pdfUrl);
-        pdfDoc.value = await loadingTask.promise;
-        renderPage(1); // 默认渲染第 1 页
-      } catch (err) {
-        console.error("PDF 加载失败:", err);
-      }
+    onMounted(() => {
+      console.log("pdfUrl:", pdfUrl.value);
+      console.log("latexText length:", latexText.value?.length || 0);
     });
 
     return {
-      pdfContainer,
+      pdfUrl,
       latexLines,
-      scrollPdfTo,
+      currentPage,
+      totalPages,
+      hoveredLine,
+      handleLineHover,
+      handleLineLeave,
+      onPdfLoad
     };
-  },
+  }
 };
 </script>
 
 <style scoped>
+.results {
+  padding: 20px;
+}
+
 .results-container {
   display: flex;
   gap: 20px;
+  height: calc(100vh - 120px);
 }
 
 .pdf-viewer {
   flex: 1;
-  height: 80vh;
-  overflow-y: auto;
   border: 1px solid #ddd;
   background: #f9f9f9;
+  overflow: hidden;
+  position: relative;
+}
+
+.pdf-iframe {
+  width: 100%;
+  height: 100%;
+  min-height: 500px;
+}
+
+.pdf-placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: #666;
 }
 
 .latex-viewer {
   flex: 1;
-  height: 80vh;
-  overflow-y: auto;
   border: 1px solid #ddd;
-  padding: 8px; /* ✅ 缩小 padding */
-  font-family: monospace;
   background: #fff;
+  display: flex;
+  flex-direction: column;
+}
+
+.latex-header {
+  padding: 12px;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.latex-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.page-controls {
+  font-size: 14px;
+  color: #666;
 }
 
 .latex-lines {
-  font-size: 13px;  /* ✅ 字体更小 */
-  line-height: 1.4; /* ✅ 行距更紧凑 */
-  margin: 0;
-  padding: 0;
+  flex: 1;
+  overflow-y: auto;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .latex-line {
-  padding: 1px 3px; /* ✅ 缩小缩进 */
+  padding: 4px 12px;
+  display: flex;
   cursor: pointer;
-  white-space: pre-wrap; /* ✅ 自动换行 */
+  transition: background-color 0.2s;
+  border-left: 3px solid transparent;
 }
 
 .latex-line:hover {
-  background: #e0f7fa;
+  background-color: #f8f9fa;
+}
+
+.latex-line.highlighted {
+  background-color: #e3f2fd;
+  border-left-color: #2196f3;
+}
+
+.latex-empty {
+  padding: 12px;
+  color: #999;
+}
+
+.line-number {
+  min-width: 40px;
+  color: #7f8c8d;
+  font-size: 11px;
+  user-select: none;
+}
+
+.line-content {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+@media (max-width: 768px) {
+  .results-container {
+    flex-direction: column;
+    height: auto;
+  }
+  
+  .pdf-viewer, .latex-viewer {
+    height: 400px;
+  }
 }
 </style>

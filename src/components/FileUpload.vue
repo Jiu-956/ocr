@@ -57,7 +57,7 @@ export default {
     }
   },
   computed: {
-    ...mapState(['uploadStatus', 'error']),
+    ...mapState(['uploadStatus', 'error', 'ocrResults']),
     isUploading() {
       return this.uploadStatus === 'uploading'
     },
@@ -114,25 +114,50 @@ export default {
       return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
     },
 
-    // ✅ 这里改成调用 Vuex → FastAPI
+    // ✅ 上传并稳妥写入 pdfUrl + LaTeX 文本（不会把已有 text 覆盖成空）
     async handleSubmit() {
-  if (!this.selectedFile) return
+      if (!this.selectedFile) return
 
-  try {
-    await this.uploadFile(this.selectedFile)  // ✅ 直接传 file
+      try {
+        // 生成前端 PDF 预览 URL（仅在确实是 PDF 时）
+        const isPdf = this.selectedFile.type === 'application/pdf' || /\.pdf$/i.test(this.selectedFile.name)
+        const pdfBlobUrl = isPdf ? URL.createObjectURL(this.selectedFile) : null
 
-    if (this.uploadStatus === 'success') {
-      this.$router.push('/results')
+        // 调用 OCR 接口（Vuex action）
+        const res = await this.uploadFile(this.selectedFile)
+
+        // 尽最大可能拿到 OCR 文本
+        let ocrText = ''
+        if (typeof res === 'string') {
+          ocrText = res
+        } else if (res && typeof res.text === 'string') {
+          ocrText = res.text
+        } else if (this.$store.state.ocrResults && typeof this.$store.state.ocrResults.text === 'string') {
+          // action 里如果已经存过了，这里就复用，避免覆盖为空
+          ocrText = this.$store.state.ocrResults.text
+        }
+
+        // 合并写入（避免把已有值覆盖为空）
+        const payload = {
+          pdfUrl: pdfBlobUrl || (this.$store.state.ocrResults && this.$store.state.ocrResults.pdfUrl) || '',
+          text: ocrText
+        }
+        this.$store.commit('setOcrResults', payload)
+
+        // 跳转
+        if (this.uploadStatus === 'success') {
+          this.$router.push('/results')
+        } else {
+          // 即便没有显式 success，也允许进入结果页排查
+          this.$router.push('/results')
+        }
+      } catch (err) {
+        console.error('上传失败:', err)
+      }
     }
-  } catch (err) {
-    console.error('上传失败:', err)
-  }
-}
-
   }
 }
 </script>
-
 
 <style scoped>
 .file-upload {

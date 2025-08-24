@@ -21,9 +21,6 @@
       <div class="latex-viewer">
         <div class="latex-header">
           <h3>Nougat LaTeX 输出</h3>
-          <div class="page-controls" v-if="totalPages > 0">
-            <span>第 {{ currentPage }} 页 / 共 {{ totalPages }} 页</span>
-          </div>
         </div>
         <div class="latex-lines">
           <div
@@ -56,16 +53,13 @@ export default {
   setup() {
     const store = useStore();
 
-    // pdfUrl 兜底为空字符串，避免 undefined
     const pdfUrl = computed(() => store.state.ocrResults?.pdfUrl || "");
 
-    // 把任何可能的返回（字符串/对象/空）都兜底成字符串
     const latexText = computed(() => {
       const raw = store.state.ocrResults?.text;
       if (typeof raw === "string") return raw;
       if (raw == null) return "";
       try {
-        // 有些后端会给对象，这里兜底为 JSON 字符串，至少可见
         return JSON.stringify(raw, null, 2);
       } catch {
         return String(raw);
@@ -76,17 +70,14 @@ export default {
     const totalPages = ref(0);
     const hoveredLine = ref(null);
 
-    // LaTeX 按行拆分
     const latexLines = computed(() => {
       if (!latexText.value) return [];
-      // 兼容没有换行的整段文本
       const lines = latexText.value.includes("\n")
         ? latexText.value.split("\n")
         : [latexText.value];
       return lines.filter(line => line.trim() !== "");
     });
 
-    // 鼠标悬停处理
     const handleLineHover = (lineIndex) => {
       hoveredLine.value = lineIndex;
       scrollToCorrespondingPage(lineIndex);
@@ -96,18 +87,14 @@ export default {
       hoveredLine.value = null;
     };
 
-    // 滚动到对应页面
     const scrollToCorrespondingPage = (lineIndex) => {
-      // 简单的页面映射逻辑：每10行对应一页
       const targetPage = Math.floor(lineIndex / 10) + 1;
       if (targetPage >= 1 && (totalPages.value === 0 || targetPage <= totalPages.value)) {
         currentPage.value = targetPage;
       }
     };
 
-    // PDF加载完成回调
     const onPdfLoad = () => {
-      // 注意：iframe 方式拿不到总页数，这里给一个可见默认值
       totalPages.value = Math.max(totalPages.value, 5);
     };
 
@@ -186,11 +173,6 @@ export default {
 .latex-header h3 {
   margin: 0;
   font-size: 16px;
-}
-
-.page-controls {
-  font-size: 14px;
-  color: #666;
 }
 
 .latex-lines {
